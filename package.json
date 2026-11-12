@@ -1,0 +1,7 @@
+{
+  "name": "gp-mpc-racing",
+  "private": true,
+  "scripts": {
+    "dev": "OPENBLAS_NUM_THREADS=1 .venv/bin/python preview.py"
+  }
+}

@@ -1,0 +1,23 @@
+[Unit]
+Description=GP-MPC vehicle competition evaluator
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+[Service]
+User=vehicle-evaluator
+Group=vehicle-evaluator
+SupplementaryGroups=docker
+WorkingDirectory=/opt/gp-mpc-racing
+Environment=RACE_WORK_DIR=/var/lib/vehicle-race
+Environment=OPENBLAS_NUM_THREADS=1
+ExecStart=/opt/gp-mpc-racing/.venv/bin/python -m gp_mpc_racing.worker --config /etc/vehicle-race/worker.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/vehicle-race /etc/vehicle-race
+[Install]
+WantedBy=multi-user.target
