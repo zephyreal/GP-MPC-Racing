@@ -13,7 +13,7 @@ START_LIVE
 
 网页没有替换`NMPC.m`、`GP.m`、`race_cost.m`或车辆模型。原始MATLAB程序仍使用原地图、原状态/控制维度和原求解器。网页Python版本只是独立移植试验，不是这个原程序。
 
-原上传包的`selftest_v3.m`调用`selftest_v2`，但压缩包未包含`selftest_v2.m`。这一缺失已如实保留，没有伪造补回原文件。若要运行原自检，需补齐你原环境中的该文件；`START_LIVE`是另一个独立入口。
+原上传包的`selftest_v2.m`、`selftest_v3.m`和`START_LIVE.m`均已原样保留。当前环境没有MATLAB，尚未执行这些原生入口；请在具备所需工具箱的MATLAB环境中验证。
 
 ## 导出原地图
 
