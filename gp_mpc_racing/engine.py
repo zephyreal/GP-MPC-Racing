@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 VERSION='singletrack-race-v1'
 DT=.15
@@ -18,6 +19,13 @@ class Track:
     name:str
     points:list
     width:float=8.
+    left:list|None=None
+    right:list|None=None
+    heading:list|None=None
+    source:dict|None=None
+    closed:bool=True
+    initial_state:list|None=None
+    identifier:str=''
     def __post_init__(self):
         self.lengths=[];self.dist=[0.]
         for i,p in enumerate(self.points):
@@ -36,12 +44,19 @@ class Track:
             xx=p[0]+t*dx;yy=p[1]+t*dy;d=math.hypot(x-xx,y-yy)
             if best is None or d<best[0]:best=(d,(self.dist[i]+t*self.lengths[i])%self.length,math.atan2(dy,dx),((x-xx)*(-dy)+(y-yy)*dx)/max(self.lengths[i],1e-9))
         return best
-    def public(self):return {'name':self.name,'points':self.points,'width':self.width,'length':self.length}
+    def public(self):
+        result={'name':self.name,'points':self.points,'width':self.width,'length':self.length,'closed':self.closed}
+        for key in ('left','right','heading','source','initial_state'):
+            if getattr(self,key) is not None:result[key]=getattr(self,key)
+        if self.identifier:result['id']=self.identifier
+        return result
     @classmethod
-    def from_public(cls,d):return cls(d['name'],d['points'],d['width'])
+    def from_public(cls,d):return cls(d['name'],d['points'],d['width'],**{k:d[k] for k in ('left','right','heading','source','closed','initial_state') if k in d},identifier=d.get('id',''))
 
 
-def make_track(name='oval',seed=1):
+def make_track(name='track02-original-v1',seed=1):
+    if name=='track02-original-v1':
+        return Track.from_public(json.loads((Path(__file__).parent/'data/track02-original-v1.json').read_text()))
     # Smooth public training tracks; fixed seed changes grip, never changes lap rules.
     if name=='reference':
         segments=[('s',14),('c',15,-90),('s',5),('c',4,90),('c',4,-90),('s',5),('c',3.5,-90),('s',16),('c',3.5,-120),('s',10),('c',10,120),('s',10),('c',5,90),('s',5),('c',5,90),('c',7,-180),('s',2.3),('c',10,-90),('s',14.6),('c',12,-90)]
@@ -95,7 +110,7 @@ def action(raw):
 class Race:
     def __init__(self,track,laps=2,max_time=180,seed=1):
         self.track=track;self.target=laps;self.max_time=max_time;self.seed=seed;self.grip=1.-.03*(seed%3)
-        x,y,h=track.point(0);self.state=[x,y,h,6.,0.,0.];self.s=0.;self.progress=0.;self.t=0.;self.lap_times=[];self.last_cross=0.;self.next_gate=1;self.gates=24;self.status='running';self.reason='';self.frames=[];self.errors=[];self.last=None
+        x,y,h=track.point(0);self.state=list(track.initial_state) if track.initial_state else [x,y,h,6.,0.,0.];self.s=track.project(*self.state[:2])[1] if track.initial_state else 0.;self.progress=0.;self.t=0.;self.lap_times=[];self.last_cross=0.;self.next_gate=1;self.gates=24;self.status='running';self.reason='';self.frames=[];self.errors=[];self.last=None
         self.record([0,0],0,{})
     def observation(self):
         return {'state':self.state[:],'time':self.t,'dt':DT,'track':self.track.public(),'progress':self.progress,'lap':len(self.lap_times),'target_laps':self.target,'last_transition':self.last,'max_steering':STEER}

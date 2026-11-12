@@ -12,7 +12,7 @@ def main():
         folder=Path(temporary);folder.chmod(0o755);path=folder/'agent.py';path.write_text('from gp_mpc_racing.controllers import PursuitController\nController=PursuitController\n');path.chmod(0o444)
         for teacher in (True,False):
             agent=Agent(image,folder,teacher=teacher,learn=True,expected_baseline=cfg['baseline_hash'])
-            try:result=verify(make_track(),cfg,execute_race(agent,cfg))
+            try:result=verify(make_track(cfg['track']),cfg,execute_race(agent,cfg))
             finally:agent.close()
             if result['status']!='completed':raise SystemExit('隔离验收失败：'+str(result['reason']))
             print(('教师' if teacher else '学生模板')+'两圈验收通过：'+str(result['simulated_seconds'])+'模拟秒')

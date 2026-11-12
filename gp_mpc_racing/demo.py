@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from fastapi import FastAPI,HTTPException,Request
 from pydantic import BaseModel,Field
+from typing import Literal
 from .server import register
 from .engine import make_track,Race
 from .controllers import MPCController,PursuitController
@@ -23,6 +24,7 @@ def root():
     from fastapi.responses import RedirectResponse
     return RedirectResponse('/courses/design/vehicle/')
 class Demo(BaseModel):
+    track:Literal['track02-original-v1','oval','technical']='track02-original-v1'
     speed:float=Field(default=8,ge=4,le=12)
     lookahead:float=Field(default=7,ge=4,le=12)
     laps:int=Field(default=2,ge=1,le=3)
@@ -37,14 +39,14 @@ def start(x:Demo,request:Request):
         state.update(status='running',phase='准备可信控制器',result=None)
     def run():
         try:
-            results={};track=make_track()
+            results={};track=make_track(x.track)
             for key,controller in [('teacher',MPCController(learn=x.learn)),('student',PursuitController(x.speed,x.lookahead))]:
                 race=Race(track,x.laps,180)
                 while race.status=='running':
                     started=time.monotonic();raw=controller.act(race.observation());race.advance(raw,(time.monotonic()-started)*1000)
                     with lock:state['phase']=('教师GP-MPC' if key=='teacher' else '学生入门策略')+' · 模拟 '+str(round(race.t,1))+' 秒'
                 results[key]=race.result()
-            with lock:state.update(status='completed',phase='可信示例已计算，可播放对照',result={'track':track.public(),'config':{'laps':x.laps,'learn':x.learn,'track':'oval','engine':'singletrack-race-v1'},**results})
+            with lock:state.update(status='completed',phase='可信示例已计算，可播放对照',result={'track':track.public(),'config':{'laps':x.laps,'learn':x.learn,'track':x.track,'engine':'singletrack-race-v1'},**results})
         except Exception:
             with lock:state.update(status='failed',phase='演示计算失败，请检查后台日志')
             import traceback;traceback.print_exc()

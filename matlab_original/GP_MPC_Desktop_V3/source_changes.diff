@@ -1,0 +1,341 @@
+--- original/classes/GP.m
++++ v2/classes/GP.m
+@@ -119,7 +119,10 @@
+         %------------------------------------------------------------------
+             kernel = zeros(size(x1,2),size(x2,2),obj.p);
+             for pi = 1:obj.p
+-                D = pdist2(x1',x2','mahalanobis',obj.M(:,:,pi)).^2;
++                C = chol(obj.M(:,:,pi),'lower');
++                A = C \ x1;
++                B = C \ x2;
++                D = max(0,sum(A.^2,1)' + sum(B.^2,1) - 2*(A'*B));
+                 %D = pdist2(x1',x2','seuclidean',diag((obj.M).^0.5)).^2;
+                 kernel(:,:,pi) = obj.var_f(pi) * exp( -0.5 * D );
+             end
+@@ -140,7 +143,7 @@
+ 
+             % for each output dimension
+             obj.alpha = zeros(obj.N,obj.p);
+-            obj.L = zeros(obj.N,obj.N);
++            obj.L = zeros(obj.N,obj.N,obj.p);
+             K = obj.K(obj.X,obj.X);
+             for pi=1:obj.p
+                 obj.L(:,:,pi) = chol(K(:,:,pi)+ obj.var_n(pi) * I ,'lower');
+@@ -266,17 +269,19 @@
+                  mu_y(pi,:) = obj.mu(x) + KxX(:,:,pi) * obj.alpha(:,pi);
+             end
+             
+-            % Calculate posterior covariance var_y
++            % Mean-only calls avoid all posterior variance solves.
++            if nargout < 2
++                return;
++            end
++
++            % Batched triangular solve; the SE kernel diagonal is var_f.
+             var_y = zeros(obj.p,obj.p,Nx);
+             for pi=1:obj.p
+-                for i=1:Nx
+-                    % (less efficient) v = obj.L\obj.K(x(:,i),obj.X)';
+-                    v = obj.L(:,:,pi)\KxX(i,:,pi)';
+-                    K = obj.K(x(:,i),x(:,i));
+-                    var_y(pi,pi,i) = K(:,:,pi) - v'*v;
+-                end
+-            end
+-            
++                V = obj.L(:,:,pi) \ KxX(:,:,pi)';
++                values = obj.var_f(pi) - sum(V.^2,1);
++                var_y(pi,pi,:) = reshape(values,1,1,Nx);
++            end
++
+             % --------------------- (DEPRECATED) ------------------------- 
+             % % SLOW BUT RETURNS THE FULL COVARIANCE MATRIX INSTEAD OF ONLY THE DIAGONAL (VAR)
+             % KxX = obj.K(x,obj.X);
+--- original/classes/MotionModelGP.m
++++ v2/classes/MotionModelGP.m
+@@ -39,7 +39,7 @@
+     end
+     
+     properties (SetAccess=public)
+-        % is_d_active = false
++        fastMidpoint = true
+     end
+     
+     methods (Abstract)
+@@ -80,7 +80,7 @@
+             if isempty(obj.d)
+                 mu_d  = @(z) zeros(obj.nd,1);
+                 var_d = @(z) zeros(obj.nd);
+-                obj.d = @(z) deal( mu_d(z), var_d(z) );
++                obj.d = @(z) obj.zeroDisturbance(z);
+             end
+             
+             obj.var_w = var_w;
+@@ -147,7 +147,12 @@
+                 %-----------------
+                 % Fixed step ODE2 (developed by myself)
+                 %-----------------
+-                [~,xkp1] = ODE.ode2(@(t,x) obj.f(x,uk), xk, dt, dt);
++                if obj.fastMidpoint
++                    k1 = obj.f(xk,uk);
++                    xkp1 = xk + dt*obj.f(xk + 0.5*dt*k1,uk);
++                else
++                    [~,xkp1] = ODE.ode2(@(t,x) obj.f(x,uk), xk, dt, dt);
++                end
+                 
+             elseif strcmp(obj.discretization,'ode4')
+                 %-----------------
+@@ -175,12 +180,29 @@
+                 error('Chosen discretization: %s is not yet implemented',obj.discretization);
+             end
+             
++            if nargout < 2
++                return;
++            end
++
+             % for now, gradient is being discretized using a simple ode1
+             gradx_xdot = obj.gradx_f(xk,uk);
+             gradx_xkp1 = eye(obj.n) + dt * gradx_xdot;
+         end
+         
+         
++        function [mu,var] = zeroDisturbance(obj,~)
++            mu = zeros(obj.nd,1);
++            var = zeros(obj.nd);
++        end
++
++        function mu_xkp1 = xkp1Mean(obj, mu_xk, uk, dt)
++            % Same mean-equivalent dynamics, without uncertainty propagation.
++            % Use only when objective and constraints do not use covariance.
++            fd_mean = obj.fd(mu_xk, uk, dt);
++            mu_d = obj.d(obj.z(mu_xk, uk));
++            mu_xkp1 = fd_mean + obj.Bd * mu_d;
++        end
++
+         function [mu_xkp1,var_xkp1] = xkp1 (obj, mu_xk, var_xk, uk, dt)
+         %------------------------------------------------------------------
+         %   State prediction (motion model) using Extended Kalman Filter 
+--- original/classes/MotionModelGP_SingleTrack_nominal.m
++++ v2/classes/MotionModelGP_SingleTrack_nominal.m
+@@ -77,7 +77,7 @@
+             
+             % add folder CODEGEN to path. Here there will be some functions
+             % generated with the method generate_grad_functions()
+-            addpath(fullfile(pwd,'CODEGEN'))
++            addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))),'CODEGEN'))
+         end
+         
+         function xdot = f (obj, x, u)
+--- original/classes/NMPC.m
++++ v2/classes/NMPC.m
+@@ -28,6 +28,11 @@
+     %------------------------------------------------------------------
+     
+     properties
++        meanOnlyPrediction = false % opt-in: covariance outputs become zero placeholders
++        solverDisplay = 'off'
++        solverAlgorithm = 'interior-point'
++        blockIndex
++        blockStarts
+         % Optimizer settings
+         maxiter = 200       % max solver iterations
+         tol     = 1e-6      % optimizer tolerance
+@@ -89,6 +94,8 @@
+            % optimizer parameters
+            obj.N = N;
+            obj.dt = dt;
++           obj.blockIndex = 1:N;
++           obj.blockStarts = 1:N;
+            
+            % set vector of initial guess for optimization
+            obj.uguess = zeros(m,N);
+@@ -110,23 +117,34 @@
+         end
+         
+         
++        function configureBlocking(obj,lengths)
++            assert(obj.ne==0,'Blocking currently supports ne=0 only.');
++            assert(all(lengths>0) && all(lengths==floor(lengths)) && sum(lengths)==obj.N);
++            lower = obj.lb; upper = obj.ub;
++            obj.blockIndex = repelem(1:numel(lengths),lengths);
++            obj.blockStarts = [1,1+cumsum(lengths(1:end-1))];
++            if ~isempty(lower), obj.lb = repmat(lower(1:obj.m),numel(lengths),1); end
++            if ~isempty(upper), obj.ub = repmat(upper(1:obj.m),numel(lengths),1); end
++        end
++
+         function numvars = optSize(obj)
+         %------------------------------------------------------------------
+         % How many variables we need to optimize?
+         %
+         %   vars_opt = [x0; u0;...;uN-1; e1;...;eN]
+         %------------------------------------------------------------------
+-            numvars = obj.N*obj.m + obj.N*obj.ne;
+-        end
+-        
+-        
+-        function [u_opt, e_opt] = optimize(obj, x0, t0, r, UseParallel)
++            numvars = numel(obj.blockStarts)*obj.m + obj.N*obj.ne;
++        end
++        
++        
++        function [u_opt, e_opt, info] = optimize(obj, x0, t0, r, UseParallel)
+         %------------------------------------------------------------------
+         % Calculate first uptimal control input
+         %------------------------------------------------------------------
+             
+             %-------- Set initial guess for optimization variables  -------
+-            varsguess = [obj.uguess(:); obj.eguess(:)];
++            guessU = obj.uguess(:,obj.blockStarts);
++            varsguess = [guessU(:); obj.eguess(:)];
+             
+             
+             %------------------ Optimize  ---------------------------------
+@@ -141,14 +159,20 @@
+             
+             % define optimizer settings
+             options = optimoptions('fmincon',...
+-                                   'Display','iter',...
+-                                   'Algorithm', 'interior-point',... % 'interior-point',... % 'sqp','interior-point'
++                                   'Display',obj.solverDisplay,...
++                                   'Algorithm', obj.solverAlgorithm,... % 'interior-point',... % 'sqp','interior-point'
+                                    'SpecifyConstraintGradient',false,...
+                                    'UseParallel',UseParallel,... %'ConstraintTolerance',obj.tol,...
+                                    'MaxIterations',obj.maxiter);
+             
+             % solve optimization problem
+-            [vars_opt,~] = fmincon(costfun,varsguess,[],[],[],[],obj.lb,obj.ub,nonlcon,options);
++            solveClock = tic;
++            [vars_opt,fval,exitflag,solverOutput] = fmincon(costfun,varsguess,[],[],[],[],obj.lb,obj.ub,nonlcon,options);
++            info = struct('seconds',toc(solveClock),'fval',fval, ...
++                          'exitflag',exitflag,'output',solverOutput);
++            if any(~isfinite(vars_opt))
++                error('NMPC:NonfiniteSolution','Solver returned nonfinite controls.');
++            end
+             
+             
+             %------------------ Output results  ---------------------------
+@@ -170,10 +194,14 @@
+         %   evec: <ne,N>
+         %------------------------------------------------------------------
+             % split variables
+-            uvec = vars( (1:obj.N*obj.m) );
++            assert(numel(vars)==obj.optSize(), 'NMPC:DecisionSize', ...
++                'Expected %d decision variables, received %d.',obj.optSize(),numel(vars));
++            B = numel(obj.blockStarts);
++            uvec = vars( (1:B*obj.m) );
+             evec = vars( (1:obj.N*obj.ne) + length(uvec) );
+             % reshape the column vector <m*N,1> to <m,N>
+-            uvec = reshape(uvec, obj.m, obj.N);
++            uvec = reshape(uvec, obj.m, B);
++            uvec = uvec(:,obj.blockIndex);
+             % reshape the column vector <ne*N,1> to <ne,N>
+             evec = reshape(evec, obj.ne, obj.N);
+         end
+@@ -187,6 +215,8 @@
+         %   mu_xk:  <n,N+1>
+         %   var_xk: <n,n,N+1>
+         %------------------------------------------------------------------
++            assert(isequal(size(uk),[obj.m,obj.N]), 'NMPC:ControlSequenceSize', ...
++                'Control sequence must have size %d-by-%d.',obj.m,obj.N);
+             mu_xk  = zeros(obj.n,obj.N+1);
+             var_xk = zeros(obj.n,obj.n,obj.N+1);
+             
+@@ -194,7 +224,11 @@
+             var_xk(:,:,1) = var_x0;
+             
+             for iN=1:obj.N      % [x1,...,xN]
+-                [mu_xk(:,iN+1),var_xk(:,:,iN+1)] = obj.f(mu_xk(:,iN),var_xk(:,:,iN),uk(:,iN));
++                if obj.meanOnlyPrediction
++                    mu_xk(:,iN+1) = obj.f(mu_xk(:,iN),var_xk(:,:,iN),uk(:,iN));
++                else
++                    [mu_xk(:,iN+1),var_xk(:,:,iN+1)] = obj.f(mu_xk(:,iN),var_xk(:,:,iN),uk(:,iN));
++                end
+ 
+                 % % % % if sum(isnan(mu_xk),'all') || sum(isinf(mu_xk),'all')
+                 % % % %     error('%s','System dynamics evaluated to NaN or Inf')
+@@ -226,7 +260,7 @@
+                 % % % % end
+                 
+                 % update current time
+-                t = t + iN * obj.dt;
++                t = t + obj.dt;
+             end
+             % final cost: fend=@(t,mu_x,var_x,e,r)
+             cost = cost + obj.fend(t, mu_xvec(:,end), var_xvec(:,:,end), evec(:,iN), r);
+@@ -276,7 +310,7 @@
+                 ceq_h(:,iN) = obj.h(mu_xvec(:,iN),uvec(:,iN), evec(:,iN));
+                 % provided inequality constraints (g<=0)
+                 cineq_g(:,iN) = obj.g(mu_xvec(:,iN),uvec(:,iN),evec(:,iN));
+-                t = t + iN * obj.dt;
++                t = t + obj.dt;
+             end
+ 
+             ceq   = ceq_h(:);
+--- original/classes/RaceTrack.m
++++ v2/classes/RaceTrack.m
+@@ -57,6 +57,12 @@
+ %------------------------------------------------------------------
+     
+     properties
++        useCachedInterpolation = true
++    end
++    properties(Access=private)
++        interpX
++        interpY
++        interpPsi
+     end
+     
+     properties(SetAccess=public)
+@@ -105,6 +111,9 @@
+             
+             % track width
+             obj.w = w;
++            obj.interpX = griddedInterpolant(obj.dist(:),obj.track_c(1,:)','linear','linear');
++            obj.interpY = griddedInterpolant(obj.dist(:),obj.track_c(2,:)','linear','linear');
++            obj.interpPsi = griddedInterpolant(obj.dist(:),obj.psi_c(:),'linear','linear');
+         end
+         
+         
+@@ -115,8 +124,14 @@
+         %   track radius R_c
+         %------------------------------------------------------------------
+             dist = mod(dist,max(obj.dist));
+-            pos_c = interp1(obj.dist',obj.track_c',dist,'linear','extrap')';
+-            psi_c = interp1(obj.dist',obj.psi_c',dist,'linear','extrap');
++            if obj.useCachedInterpolation
++                d = dist(:);
++                pos_c = [obj.interpX(d)';obj.interpY(d)'];
++                psi_c = obj.interpPsi(d)';
++            else
++                pos_c = interp1(obj.dist',obj.track_c',dist,'linear','extrap')';
++                psi_c = interp1(obj.dist',obj.psi_c',dist,'linear','extrap');
++            end
+             R_c   = obj.w/2;
+         end
+         
+@@ -125,15 +140,19 @@
+         %   Given the vehicle position, calculates the traveled distance 
+         %   of the vehicle 'dist' along the centerline of the track
+         %------------------------------------------------------------------
+-            if length(varargin)==1
+-                olddist = varargin{1};
+-                idxsearchspace = find( obj.dist > olddist-10 & obj.dist < olddist+20 );
++            L = max(obj.dist);
++            if numel(varargin)==1
++                olddist = mod(varargin{1},L);
++                delta = mod(obj.dist-olddist+L/2,L)-L/2;
++                idxsearchspace = find(delta > -10 & delta < 20);
+             else
+-                idxsearchspace = 1:length(obj.dist);
++                idxsearchspace = 1:numel(obj.dist);
+             end
+-            [~,I] = pdist2(obj.track_c(:,idxsearchspace)',pos_vehicle','euclidean','Smallest',1);
+-            I = mod(I+idxsearchspace(1)-1, length(obj.dist))+1;
+-            dist = obj.dist(I);
++            if isempty(idxsearchspace), idxsearchspace=1:numel(obj.dist); end
++            difference = obj.track_c(:,idxsearchspace)-pos_vehicle(:);
++            [~,localIndex] = min(sum(difference.^2,1));
++            dist = obj.dist(idxsearchspace(localIndex));
++
+         end
+         
+         function [lag_error, countour_error, offroad_error, orientation_error] = ...

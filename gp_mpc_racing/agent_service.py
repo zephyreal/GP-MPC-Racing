@@ -10,7 +10,7 @@ try:
     import hashlib
     from pathlib import Path
     root=Path(__file__).parent
-    sha=hashlib.sha256((root/'engine.py').read_bytes()+(root/'controllers.py').read_bytes()).hexdigest()
+    sha=hashlib.sha256((root/'engine.py').read_bytes()+(root/'controllers.py').read_bytes()+(root/'data/track02-original-v1.json').read_bytes()).hexdigest()
     print(json.dumps({'ready':True,'baseline_hash':sha}),flush=True)
 except Exception:
     print(json.dumps({'ready':False}),flush=True);raise SystemExit(0)

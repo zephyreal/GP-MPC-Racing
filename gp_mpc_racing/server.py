@@ -10,7 +10,7 @@ from .engine import VERSION,make_track,verify,rank_key,digest
 
 ROOT=Path(__file__).parent
 BJT=timezone(timedelta(hours=8))
-def baseline_hash():return hashlib.sha256((ROOT/'engine.py').read_bytes()+(ROOT/'controllers.py').read_bytes()).hexdigest()
+def baseline_hash():return hashlib.sha256((ROOT/'engine.py').read_bytes()+(ROOT/'controllers.py').read_bytes()+(ROOT/'data/track02-original-v1.json').read_bytes()).hexdigest()
 def validate_archive(content):
     if not content or len(content)>1_000_000:raise ValueError('代码ZIP必须小于1MB')
     with zipfile.ZipFile(io.BytesIO(content)) as z:
@@ -28,7 +28,7 @@ def validate_archive(content):
 
 class Competition(BaseModel):
     title:str=Field(min_length=2,max_length=100)
-    track:Literal['oval','technical','reference']='oval'
+    track:Literal['track02-original-v1','oval','technical','reference']='track02-original-v1'
     laps:int=Field(default=2,ge=1,le=5)
     max_time:int=Field(default=180,ge=30,le=600)
     mode:Literal['practice','final']='practice'
@@ -116,7 +116,9 @@ def register(app,env,*,demo=False):
     @app.get('/courses/design/vehicle/')
     def page(u=Depends(access)):return FileResponse(ROOT/'static/index.html',headers={'Cache-Control':'no-store'})
     @app.get('/courses/design/vehicle/{name}')
-    def asset(name:Literal['app.js','style.css','entry.js']):return FileResponse(ROOT/'static'/name,headers={'Cache-Control':'no-cache'})
+    def asset(name:Literal['app.js','style.css','entry.js','replay-format.js']):return FileResponse(ROOT/'static'/name,headers={'Cache-Control':'no-cache'})
+    @app.get('/api/vehicle/reference')
+    def reference(u=Depends(access)):return make_track('track02-original-v1').public()
     @app.get('/api/vehicle/me')
     def me(u=Depends(access)):return {'role':u['role'],'name':u['name'],'demo':demo}
     @app.get('/api/vehicle/competitions')
@@ -126,7 +128,7 @@ def register(app,env,*,demo=False):
             return {'competitions':[{**dict(a),'config':json.loads(a['config'])} for a in rows],'worker_online':worker['last_seen']>time.time()-60}
     @app.post('/api/vehicle/competitions')
     def create(x:Competition,u=Depends(teacher)):
-        active();cfg=x.model_dump();cfg.update(engine=VERSION,step_ms=2000,training_ms=20000,baseline_maxiter=12,baseline_hash=baseline_hash())
+        active();cfg=x.model_dump();cfg.update(controller_profile='python-port-v1',engine=VERSION,step_ms=2000,training_ms=20000,baseline_maxiter=12,baseline_hash=baseline_hash())
         with db() as c:
             cid=c.execute('INSERT INTO vehicle_competitions(title,config,mode,published,baseline_hash) VALUES(?,?,?,?,?)',(x.title,json.dumps(cfg),x.mode,int(x.mode=='practice'),cfg['baseline_hash'])).lastrowid;audit(c,u,'create',cid)
         return {'id':cid}

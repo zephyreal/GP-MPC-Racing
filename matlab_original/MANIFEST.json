@@ -1,0 +1,187 @@
+{
+  "source_archive": "GP_MPC_Desktop_V3(2).zip",
+  "archive_sha256": "8c263b79260570887be39c1a7e5901660bb86a9b3c0ac2ad3eb1ed72f5b89e32",
+  "policy": "Original file bytes unchanged; adapters live outside this directory.",
+  "files": [
+    {
+      "path": "GP_MPC_Desktop_V3/CODEGEN/invertedPendulum_f.m",
+      "bytes": 768,
+      "sha256": "208e622bb16420fd4f7546b4e73039dcf76d38dd0be231fb908d00dda8df9aec"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/CODEGEN/invertedPendulum_gradu_f.m",
+      "bytes": 521,
+      "sha256": "abffb5de9f8fa099895cb418f93a33245ef3a55939d3fa3bc3c36eb5a546229e"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/CODEGEN/invertedPendulum_gradx_f.m",
+      "bytes": 1199,
+      "sha256": "3318523759e686f701c449daa0d1a3d97992f6c3643e62de3ac4a6ca2bdffed1"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/CODEGEN/singletrack_gradu_f.m",
+      "bytes": 2619,
+      "sha256": "e51a63ef625bd62576af9139e71e83acca5ab4eecbedb9c234d6a3f4f852f9c8"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/CODEGEN/singletrack_gradx_f.m",
+      "bytes": 2271,
+      "sha256": "5afa882e13cffb0ee5db23e3e139590981a70789d5b02dafb52284e1f8edb186"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/GPBlend.m",
+      "bytes": 546,
+      "sha256": "503d2d2089ff98f81c6d1bb722fc837e0b7d840b49b99e51981b10a583e26e7c"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/ORIGINAL_README.md",
+      "bytes": 1659,
+      "sha256": "4213c05bcd86ba430d235c16a5c3411c4d8c20cbd97abf0cff9960bd46928ba1"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/README_CN.md",
+      "bytes": 5509,
+      "sha256": "997eedadb1c52f744d365ae0c82e0863ee26bb3276b4690865952333dd73f5dc"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/README_V2_CN.md",
+      "bytes": 8315,
+      "sha256": "cfff85e6dd7c11b33050a9aeb0421ce123961bacaeabc00301b92e43cfc2df14"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/START_HERE.m",
+      "bytes": 397,
+      "sha256": "ea6d65f5b92a15c9667fc018c197cfe489022d8c5d1013f4037006ac85979e76"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/START_LIVE.m",
+      "bytes": 384,
+      "sha256": "d5ec95d6259bed2af7d5a4cd04946903dbe135f1478a35a6cb143cbd6ceab153"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/benchmark_v2.m",
+      "bytes": 1404,
+      "sha256": "80190d2d0a2237cd293252f264e78d93fcb9fb26d6db262e52ddb3db689290d2"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/GP.m",
+      "bytes": 24775,
+      "sha256": "8ea2bb6c0015287549a0473bbd486be58f5656c86f6e275f0eed5a1b1e5091db"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/MotionModelGP.m",
+      "bytes": 10080,
+      "sha256": "73c3d414198253b979fa483a078aa78228e30cb3f73ee7b54e291953c920001b"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/MotionModelGP_InvPendulum_deffect.m",
+      "bytes": 2262,
+      "sha256": "161b1760ea21342d27d7dc887d5124c1e5c67c2bf483da47198e3189c8315d00"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/MotionModelGP_InvPendulum_nominal.m",
+      "bytes": 6800,
+      "sha256": "934b202d7d67328b55505bc2ec34456293b4d2e903a42ae1886ed8a2414f2093"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/MotionModelGP_SingleTrack_nominal.m",
+      "bytes": 16008,
+      "sha256": "a167839653be36eca2a34530b9fee51e86325dd027f591d09cd64b312c99cc5f"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/MotionModelGP_SingleTrack_true.m",
+      "bytes": 9607,
+      "sha256": "3aa26bffdc2d0fe7cfe4f3391855290b95f3c6365c5766748fbc85bfe986991d"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/NMPC.m",
+      "bytes": 13345,
+      "sha256": "611b0fe98994c62f18e19ae022931a7f76487f70ebb97fab403f053cd479c08f"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/ODE.m",
+      "bytes": 1740,
+      "sha256": "9e69b9c372984d70dd351a916b4e63187b692d27bc8975e5a216a8c5cd044371"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/RaceTrack.m",
+      "bytes": 17751,
+      "sha256": "5aa3018ff8cd974c6d821fbd4ecb26374b1d039322db74f5a0e377e0444b1e3b"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/classes/fp.m",
+      "bytes": 2338,
+      "sha256": "41b49aeff575f57e24d2d6e2b382305c98817181e8b8773d4803d7a8e499abed"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/fit_lap_gp.m",
+      "bytes": 2213,
+      "sha256": "67b2ac86d592a6c8683d07ee56317125cea849d61b96657dd5a3b0dda30cf4a5"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/functions/drawpendulum.m",
+      "bytes": 1822,
+      "sha256": "9e38ae5f4b2812921efad94a256831813e414b896cfb3fd10acfe741644fb2ca"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/functions/logdet.m",
+      "bytes": 3121,
+      "sha256": "d91ac087ac73e4c1d16c7ccf1f16046dd644e70370d0a8c6bba99fdef84b1461"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/functions/sigmaEllipse2D.m",
+      "bytes": 1710,
+      "sha256": "f27f0f9ab909b04861c2b7d21e914883fc457a2e8de5f6ac151f1fd303cfdad1"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/live_dashboard.m",
+      "bytes": 2162,
+      "sha256": "bf75c41144b0900e01b4cecc23b983f0116011a660ce62c80568a0da5d24a5b1"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/plot_result.m",
+      "bytes": 907,
+      "sha256": "95410b9826b0c1d018cf2efa459faccc3d80e417b9854567218376d1bed37d23"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/race_cost.m",
+      "bytes": 3859,
+      "sha256": "95ea9463b1440adec188023ae42835634dfc01b8c143f23e6c4f78a3ffa9bb88"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/run_demo.m",
+      "bytes": 5625,
+      "sha256": "ad076d3a05cb4a68a6c407c35b56761082de41c90946d00298fa55d70ab3bb36"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/run_learning.m",
+      "bytes": 7886,
+      "sha256": "2958e4a05980426ce2f3dfbe1ef5d0ca08da30b808c7a321aba0eb33d95b21fb"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/selftest_v2.m",
+      "bytes": 1747,
+      "sha256": "eca80ca99a4864b40cec0ab0be023778a2db6dc3d4d8d91758b3aba5a2fff5b5"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/selftest_v3.m",
+      "bytes": 906,
+      "sha256": "0e7bcf665447f6102a40a162c49a786388e5d64ec7680014b7e596fe3a571df8"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/source_changes.diff",
+      "bytes": 14420,
+      "sha256": "4c08ddab1b4c9e7d7a04c7c47543ca9b95a8648741f73f0b5f36a3dacf73ad62"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/train_gp_offline.m",
+      "bytes": 2471,
+      "sha256": "8bf4f7ca8a7088adf3d9101263425edb011f83235ffe8f320a88d2d56552f442"
+    },
+    {
+      "path": "GP_MPC_Desktop_V3/validate_fast_paths.m",
+      "bytes": 1973,
+      "sha256": "24b97a79e5f5d31653cffdb105072c87f62d12410bb525a7f8fcc30e285882d4"
+    }
+  ]
+}

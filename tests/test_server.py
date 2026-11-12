@@ -34,7 +34,7 @@ def code():
     with zipfile.ZipFile(data,'w') as z:z.writestr('agent.py','raise RuntimeError("Must never execute on website")')
     return data.getvalue()
 def create(c,mode='practice'):
-    r=c.post('/api/vehicle/competitions',headers={'X-User':'1'},json={'title':'无人车比赛','mode':mode,'laps':1,'max_time':90,'learn':False});assert r.status_code==200,r.text
+    r=c.post('/api/vehicle/competitions',headers={'X-User':'1'},json={'title':'无人车比赛','track':'oval','mode':mode,'laps':1,'max_time':90,'learn':False});assert r.status_code==200,r.text
     return r.json()['id']
 def submit(c,cid,uid=2):
     r=c.post(f'/api/vehicle/competitions/{cid}/entries',headers={'X-User':str(uid)},data={'alias':'<script>同学','note':'test'},files={'file':('agent.zip',code())});assert r.status_code==200,r.text
