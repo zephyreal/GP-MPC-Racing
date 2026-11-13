@@ -112,7 +112,7 @@ class Worker:
     def tick(self):
         image,fingerprint=runtime(self.image);job=self.post('claim',{'fingerprint':fingerprint})['job']
         if not job:return False
-        cfg=job['config'];lease=job['lease'];eid=job['id'];cancelled=threading.Event();done=threading.Event();agents=[];deadline=time.monotonic()+1800
+        cfg=job['config'];lease=job['lease'];eid=job['id'];cancelled=threading.Event();done=threading.Event();agents=[];deadline=time.monotonic()+3600
         def heartbeat():
             failures=0
             while not done.wait(10):
@@ -144,9 +144,10 @@ class Worker:
                             directory.chmod(0o755)
                         path.write_bytes(z.read(item));path.chmod(0o444)
                 # Teacher has no student mount; neither container sees the other controller or credentials.
-                teacher=Agent(image,folder,teacher=True,learn=cfg['learn'],expected_baseline=cfg['baseline_hash']);agents.append(teacher)
-                payload['teacher']=execute_race(teacher,cfg,cancelled);teacher.close()
-                if payload['teacher']['reason'] in ('控制器超时','控制器输出无效','控制器中断'):raise RuntimeError('教师基准运行异常')
+                if not job.get('teacher_cached'):
+                    teacher=Agent(image,folder,teacher=True,learn=cfg['learn'],expected_baseline=cfg['baseline_hash']);agents.append(teacher)
+                    payload['teacher']=execute_race(teacher,cfg,cancelled);teacher.close()
+                    if payload['teacher']['reason'] in ('控制器超时','控制器输出无效','控制器中断'):raise RuntimeError('教师基准运行异常')
                 try:
                     student=Agent(image,folder);agents.append(student);payload['student']=execute_race(student,cfg,cancelled)
                 except (ValueError,TimeoutError):

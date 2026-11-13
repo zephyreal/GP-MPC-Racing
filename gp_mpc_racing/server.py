@@ -29,8 +29,8 @@ def validate_archive(content):
 class Competition(BaseModel):
     title:str=Field(min_length=2,max_length=100)
     track:Literal['track02-original-v1','oval','technical','reference']='track02-original-v1'
-    laps:int=Field(default=2,ge=1,le=5)
-    max_time:int=Field(default=180,ge=30,le=600)
+    laps:int=Field(default=10,ge=1,le=10)
+    max_time:int=Field(default=1200,ge=30,le=1800)
     mode:Literal['practice','final']='practice'
     daily_limit:int=Field(default=2,ge=1,le=10)
     seed:int=Field(default=1,ge=1,le=10000)
@@ -54,7 +54,7 @@ class PayloadLimit:
     async def __call__(self,scope,receive,send):
         if scope['type']!='http' or scope.get('method') not in ('POST','PUT') or not scope.get('path','').startswith('/api/vehicle/'):
             return await self.app(scope,receive,send)
-        limit=11_000_000 if scope['path'].startswith('/api/vehicle/worker/') and scope['path'].endswith('/result') else 1_100_000
+        limit=41_000_000 if scope['path'].startswith('/api/vehicle/worker/') and scope['path'].endswith('/result') else 1_100_000
         chunks=[];size=0
         while True:
             message=await receive()
@@ -78,6 +78,7 @@ def register(app,env,*,demo=False):
         CREATE TABLE IF NOT EXISTS vehicle_competitions(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,config TEXT NOT NULL,mode TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',published INTEGER NOT NULL DEFAULT 0,baseline_hash TEXT NOT NULL,fingerprint TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS vehicle_entries(id INTEGER PRIMARY KEY AUTOINCREMENT,competition_id INTEGER NOT NULL,user_id INTEGER NOT NULL,alias TEXT NOT NULL,note TEXT NOT NULL,path TEXT NOT NULL,sha TEXT NOT NULL,state TEXT NOT NULL,created REAL NOT NULL,error TEXT NOT NULL DEFAULT '',lease_hash TEXT NOT NULL DEFAULT '',lease_until REAL NOT NULL DEFAULT 0,result TEXT);
         CREATE TABLE IF NOT EXISTS vehicle_audit(id INTEGER PRIMARY KEY,user_id INTEGER,action TEXT,target TEXT,created REAL);
+        CREATE TABLE IF NOT EXISTS vehicle_baselines(cache_key TEXT PRIMARY KEY,result TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS vehicle_queue ON vehicle_entries(state,id);''')
     def audit(c,u,what,target):c.execute('INSERT INTO vehicle_audit(user_id,action,target,created) VALUES(?,?,?,?)',(u['id'] if u else None,what,str(target),time.time()))
     def access(u=Depends(current)):
@@ -120,7 +121,7 @@ def register(app,env,*,demo=False):
     @app.get('/api/vehicle/reference')
     def reference(u=Depends(access)):return make_track('track02-original-v1').public()
     @app.get('/api/vehicle/me')
-    def me(u=Depends(access)):return {'role':u['role'],'name':u['name'],'demo':demo}
+    def me(u=Depends(access)):return {'id':u['id'],'role':u['role'],'name':u['name'],'demo':demo}
     @app.get('/api/vehicle/competitions')
     def competitions(u=Depends(access)):
         with db() as c:
@@ -153,19 +154,32 @@ def register(app,env,*,demo=False):
             c.execute('UPDATE vehicle_settings SET token_hash=?,last_seen=0 WHERE id=1',(hashlib.sha256(token.encode()).hexdigest(),));c.execute("UPDATE vehicle_entries SET state='interrupted',lease_hash='',error='评测凭证已更换' WHERE state='running'");audit(c,u,'rotate-worker','key')
         return {'token':token}
     @app.get('/api/vehicle/starter')
-    def starter(u=Depends(access)):
-        output=io.BytesIO()
-        with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
-            z.writestr('agent.py',"from gp_mpc_racing.controllers import PursuitController\nclass Controller(PursuitController):\n    def __init__(self):super().__init__(speed=8.,lookahead=7.)\n")
-            z.writestr('README.md','根目录agent.py须包含Controller类及act(observation)方法；返回steering和torque，均在[-1,1]。平台提供numpy/scipy；禁止联网或安装依赖。')
-        return StreamingResponse(iter([output.getvalue()]),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="vehicle-starter.zip"'})
+    def starter(cid:int|None=None,u=Depends(access)):
+        from .starter import build_starter
+        cfg=Competition(title='本地入门训练',track='oval').model_dump()
+        if cid is not None:
+            with db() as c:cfg=json.loads(comp(c,cid)['config'])
+        output=build_starter(cfg)
+        return StreamingResponse(iter([output]),media_type='application/zip',headers={'Content-Disposition':'attachment; filename="vehicle-starter.zip"'})
     @app.post('/api/vehicle/competitions/{cid}/entries')
-    async def upload(cid:int,file:UploadFile=File(...),alias:str=Form(...),note:str=Form(''),u=Depends(access)):
+    async def upload(cid:int,file:UploadFile=File(...),alias:str=Form(''),note:str=Form(''),u=Depends(access)):
         active()
         if u['role']!='student':raise HTTPException(403,'请用学生账号参赛')
+        alias=alias.strip() or ('同学'+str(u['id']))
         if not 1<=len(alias.strip())<=30 or len(note)>2000:raise HTTPException(400,'昵称1—30字，改进说明不超过2000字')
         content=await file.read(1_000_001)
-        try:validate_archive(content)
+        try:
+            if (file.filename or '').lower().endswith('.py'):
+                if not content or len(content)>900_000:raise ValueError('Python文件须小于900KB')
+                import ast
+                try:ast.parse(content.decode('utf-8-sig'))
+                except (UnicodeError,SyntaxError) as e:raise ValueError('Python文件须为UTF-8编码且语法正确：'+str(e))
+                output=io.BytesIO()
+                with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
+                    info=zipfile.ZipInfo('agent.py');info.compress_type=zipfile.ZIP_DEFLATED
+                    z.writestr(info,content)
+                content=output.getvalue()
+            validate_archive(content)
         except (ValueError,zipfile.BadZipFile) as e:raise HTTPException(400,str(e))
         path=folder/(secrets.token_hex(20)+'.zip')
         try:
@@ -173,10 +187,16 @@ def register(app,env,*,demo=False):
             with db() as c:
                 c.execute('BEGIN IMMEDIATE');maintain(c);a=comp(c,cid);cfg=json.loads(a['config'])
                 if a['state']!='open':raise HTTPException(409,'比赛已经封存')
+                sha=hashlib.sha256(content).hexdigest()
+                same=c.execute("SELECT id FROM vehicle_entries WHERE competition_id=? AND user_id=? AND sha=? AND state IN ('pending','running','completed','waiting') ORDER BY id DESC LIMIT 1",(cid,u['id'],sha)).fetchone()
+                if same:
+                    path.unlink(missing_ok=True)
+                    return {'id':same['id'],'reused':True}
                 midnight=datetime.now(BJT).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
                 used=c.execute('SELECT COUNT(*) FROM vehicle_entries WHERE competition_id=? AND user_id=? AND created>=?',(cid,u['id'],midnight)).fetchone()[0]
                 if used>=cfg['daily_limit']:raise HTTPException(429,'今天的提交次数已用完')
                 if c.execute("SELECT COUNT(*) FROM vehicle_entries WHERE state IN ('waiting','pending','running')").fetchone()[0]>=300:raise HTTPException(429,'评测队列已满')
+                c.execute("UPDATE vehicle_entries SET state='superseded' WHERE competition_id=? AND user_id=? AND state IN ('pending','waiting')",(cid,u['id']))
                 eid=c.execute('INSERT INTO vehicle_entries(competition_id,user_id,alias,note,path,sha,state,created) VALUES(?,?,?,?,?,?,?,?)',(cid,u['id'],alias.strip(),note.strip(),str(path),hashlib.sha256(content).hexdigest(),'waiting' if a['mode']=='final' else 'pending',time.time())).lastrowid;audit(c,u,'submit',eid)
         except Exception:path.unlink(missing_ok=True);raise
         return {'id':eid}
@@ -222,14 +242,16 @@ def register(app,env,*,demo=False):
     def claim(x:Worker,auth=Depends(auth_worker)):
         with db() as c:
             c.execute('BEGIN IMMEDIATE');maintain(c);c.execute('UPDATE vehicle_settings SET last_seen=? WHERE id=1',(time.time(),))
+            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='arena_entries'").fetchone():
+                if c.execute("SELECT 1 FROM arena_entries WHERE state='running' AND lease_until>?",(time.time(),)).fetchone():return {'job':None}
             if c.execute("SELECT 1 FROM vehicle_entries WHERE state='running'").fetchone():return {'job':None}
-            rows=c.execute("SELECT * FROM vehicle_entries WHERE state='pending' ORDER BY id").fetchall()
+            rows=c.execute("SELECT e.* FROM vehicle_entries e WHERE e.state='pending' ORDER BY COALESCE((SELECT MAX(h.created) FROM vehicle_entries h WHERE h.user_id=e.user_id AND h.state IN ('completed','failed','interrupted','excluded')),0), e.id").fetchall()
             for r in rows:
                 a=comp(c,r['competition_id'])
                 if a['fingerprint'] and a['fingerprint']!=x.fingerprint:continue
                 if not a['fingerprint']:c.execute('UPDATE vehicle_competitions SET fingerprint=? WHERE id=?',(x.fingerprint,a['id']))
                 lease=secrets.token_urlsafe(32);c.execute("UPDATE vehicle_entries SET state='running',lease_hash=?,lease_until=? WHERE id=?",(hashlib.sha256(lease.encode()).hexdigest(),time.time()+90,r['id']))
-                return {'job':{'id':r['id'],'config':json.loads(a['config']),'lease':lease,'sha':r['sha']}}
+                return {'job':{'id':r['id'],'config':json.loads(a['config']),'lease':lease,'sha':r['sha'],'teacher_cached':bool(c.execute('SELECT 1 FROM vehicle_baselines WHERE cache_key=?',(digest({'config':json.loads(a['config']),'fingerprint':x.fingerprint}),)).fetchone())}}
             return {'job':None}
     @app.post('/api/vehicle/worker/{eid}/heartbeat')
     def heartbeat(eid:int,x:Lease,auth=Depends(auth_worker)):
@@ -240,6 +262,14 @@ def register(app,env,*,demo=False):
     def worker_source(eid:int,request:Request,auth=Depends(auth_worker)):
         with db() as c:r=leased(c,eid,request.headers.get('X-Race-Lease',''))
         return FileResponse(r['path'],filename='entry.zip')
+    @app.get('/api/vehicle/worker/{eid}/teacher')
+    def cached_teacher(eid:int,request:Request,auth=Depends(auth_worker)):
+        with db() as c:
+            r=leased(c,eid,request.headers.get('X-Race-Lease',''));a=comp(c,r['competition_id'])
+            key=digest({'config':json.loads(a['config']),'fingerprint':a['fingerprint']})
+            cached=c.execute('SELECT result FROM vehicle_baselines WHERE cache_key=?',(key,)).fetchone()
+            if not cached:raise HTTPException(404,'教师基准尚未计算')
+            return json.loads(cached['result'])
     @app.post('/api/vehicle/worker/{eid}/result')
     def result(eid:int,x:Result,auth=Depends(auth_worker)):
         with db() as c:
@@ -249,8 +279,13 @@ def register(app,env,*,demo=False):
                 c.execute("UPDATE vehicle_entries SET state='failed',error=?,lease_hash='' WHERE id=?",(x.error,eid))
             else:
                 try:
-                    if len(json.dumps(x.teacher))+len(json.dumps(x.student))>10_000_000:raise ValueError('报告过大')
-                    track=make_track(cfg['track']);report={k:verify(track,cfg,v) for k,v in [('teacher',x.teacher),('student',x.student)]}
+                    if len(json.dumps(x.teacher))+len(json.dumps(x.student))>40_000_000:raise ValueError('报告过大')
+                    track=make_track(cfg['track']);cache_key=digest({'config':cfg,'fingerprint':x.fingerprint})
+                    cached=c.execute('SELECT result FROM vehicle_baselines WHERE cache_key=?',(cache_key,)).fetchone()
+                    teacher_result=json.loads(cached['result']) if cached else verify(track,cfg,x.teacher)
+                    report={'teacher':teacher_result,'student':verify(track,cfg,x.student)}
+                    if not cached and teacher_result['reason'] not in ('控制器超时','控制器输出无效','控制器中断'):
+                        c.execute('INSERT OR IGNORE INTO vehicle_baselines VALUES(?,?)',(cache_key,json.dumps(teacher_result,separators=(',',':'))))
                 except (ValueError,TypeError,KeyError,ArithmeticError) as e:raise HTTPException(400,str(e))
                 c.execute("UPDATE vehicle_entries SET state='completed',result=?,error='',lease_hash='' WHERE id=?",(json.dumps(report,separators=(',',':')),eid))
             audit(c,None,'worker-result',eid)

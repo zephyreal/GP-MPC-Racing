@@ -86,5 +86,59 @@ def test_archive_and_transport_limits(setup):
         data=io.BytesIO()
         with zipfile.ZipFile(data,'w') as z:z.writestr(name,'x')
         with pytest.raises(ValueError):validate_archive(data.getvalue())
-    assert c.post('/api/vehicle/worker/9/result',content=b'x'*11_000_001).status_code==413
+    assert c.post('/api/vehicle/worker/9/result',content=b'x'*41_000_001).status_code==413
     assert c.post('/api/vehicle/competitions',headers={'X-User':'2'},json={'title':'wrong'}).status_code==403
+
+def test_single_file_upload_deduplicates_without_execution(setup):
+    c,db=setup;cid=create(c)
+    files={'file':('agent.py',b'raise RuntimeError("website must never run this")')}
+    url=f'/api/vehicle/competitions/{cid}/entries'
+    first=c.post(url,headers={'X-User':'2'},files=files);assert first.status_code==200,first.text
+    second=c.post(url,headers={'X-User':'2'},files=files)
+    assert second.json()['id']==first.json()['id'] and second.json()['reused']
+    bad=c.post(url,headers={'X-User':'2'},files={'file':('agent.py',b'def broken(:')})
+    assert bad.status_code==400
+    changed=c.post(url,headers={'X-User':'2'},files={'file':('agent.py',b'pass')})
+    assert changed.status_code==200
+    with db() as d:assert d.execute('SELECT state FROM vehicle_entries WHERE id=?',(first.json()['id'],)).fetchone()[0]=='superseded'
+
+def test_shared_compute_slot_blocks_vehicle_and_expires(setup):
+    c,db=setup;cid=create(c);submit(c,cid);w=worker(c)
+    import time
+    with db() as d:
+        d.execute('CREATE TABLE arena_entries(state TEXT,lease_until REAL)')
+        d.execute('INSERT INTO arena_entries VALUES(?,?)',('running',time.time()+90))
+    assert claim(c,w) is None
+    with db() as d:d.execute('UPDATE arena_entries SET lease_until=0')
+    assert claim(c,w) is not None
+
+def test_teacher_cache_reused_only_for_frozen_environment(setup,trusted_reports):
+    c,db=setup;cid=create(c);submit(c,cid);w=worker(c);job=claim(c,w)
+    assert not job['teacher_cached'];finish(c,w,job,trusted_reports)
+    submit(c,cid,uid=3);job=claim(c,w);assert job['teacher_cached']
+    finish(c,w,job,{'student':trusted_reports['student']})
+    with db() as d:assert d.execute('SELECT COUNT(*) FROM vehicle_baselines').fetchone()[0]==1
+    cid2=create(c);submit(c,cid2)
+    job=c.post('/api/vehicle/worker/claim',headers=w,json={'fingerprint':'b'*64}).json()['job']
+    assert not job['teacher_cached']
+
+def test_downloaded_starter_runs_outside_repository(setup,tmp_path):
+    import subprocess,sys
+    c,db=setup;cid=create(c)
+    response=c.get(f'/api/vehicle/starter?cid={cid}',headers={'X-User':'2'})
+    assert response.status_code==200
+    target=tmp_path/'download';target.mkdir()
+    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+        assert {'agent.py','local_test.py','track.json','map.html','01_setup.bat','03_test_official.bat'}<=set(z.namelist())
+        z.extractall(target)
+    run=subprocess.run([sys.executable,'local_test.py','--official'],cwd=target,capture_output=True,text=True,timeout=60)
+    assert run.returncode==0,run.stdout+run.stderr
+    result=json.loads((target/'output/local_result.json').read_text())
+    assert result['student']['status']=='completed'
+    assert (target/'output/report.html').exists()
+
+def test_ten_lap_configuration(setup):
+    c,db=setup
+    r=c.post('/api/vehicle/competitions',headers={'X-User':'1'},json={'title':'十圈比赛','laps':10,'max_time':1200})
+    assert r.status_code==200,r.text
+    assert c.post('/api/vehicle/competitions',headers={'X-User':'1'},json={'title':'超限比赛','laps':11}).status_code==422

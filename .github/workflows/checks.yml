@@ -20,6 +20,7 @@ jobs:
       - run: node --check gp_mpc_racing/static/app.js
       - run: node --check gp_mpc_racing/static/entry.js
       - run: node tests/test_replay_format.cjs
+      - run: node tests/test_student_playback.cjs
       - run: mh_lint --brief matlab_web
       - run: mh_lint --brief matlab_original
       - run: bash -n deploy/install-course.sh
