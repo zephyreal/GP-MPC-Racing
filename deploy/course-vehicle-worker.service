@@ -1,5 +1,5 @@
 [Unit]
-Description=GP-MPC vehicle competition evaluator
+Description=Racing Car vehicle competition evaluator
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

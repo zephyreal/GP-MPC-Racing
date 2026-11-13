@@ -9,7 +9,7 @@ from .server import register
 from .engine import make_track,Race
 from .controllers import MPCController,PursuitController
 
-app=FastAPI(title='GP-MPC Racing — local demonstration');state={'status':'idle','phase':'','result':None};lock=threading.Lock()
+app=FastAPI(title='Racing Car — local demonstration');state={'status':'idle','phase':'','result':None};lock=threading.Lock()
 folder=Path(tempfile.mkdtemp(prefix='gp-mpc-demo-'));database=folder/'demo.db'
 @contextmanager
 def db():
@@ -44,7 +44,7 @@ def start(x:Demo,request:Request):
                 race=Race(track,x.laps,180)
                 while race.status=='running':
                     started=time.monotonic();raw=controller.act(race.observation());race.advance(raw,(time.monotonic()-started)*1000)
-                    with lock:state['phase']=('教师GP-MPC' if key=='teacher' else '学生入门策略')+' · 模拟 '+str(round(race.t,1))+' 秒'
+                    with lock:state['phase']=('教师基准车' if key=='teacher' else '学生入门策略')+' · 模拟 '+str(round(race.t,1))+' 秒'
                 results[key]=race.result()
             with lock:state.update(status='completed',phase='可信示例已计算，可播放对照',result={'track':track.public(),'config':{'laps':x.laps,'learn':x.learn,'track':x.track,'engine':'singletrack-race-v1'},**results})
         except Exception:

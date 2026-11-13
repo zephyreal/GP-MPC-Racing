@@ -1,4 +1,4 @@
-name: GP-MPC Racing checks
+name: Racing Car checks
 on: [push, pull_request]
 permissions:
   contents: read
