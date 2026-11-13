@@ -117,7 +117,7 @@ def register(app,env,*,demo=False):
     @app.get('/courses/design/vehicle/')
     def page(u=Depends(access)):return FileResponse(ROOT/'static/index.html',headers={'Cache-Control':'no-store'})
     @app.get('/courses/design/vehicle/{name}')
-    def asset(name:Literal['app.js','style.css','entry.js','replay-format.js']):return FileResponse(ROOT/'static'/name,headers={'Cache-Control':'no-cache'})
+    def asset(name:Literal['app.js','style.css','entry.js','replay-format.js','tutorial.html']):return FileResponse(ROOT/'static'/name,headers={'Cache-Control':'no-cache'})
     @app.get('/api/vehicle/reference')
     def reference(u=Depends(access)):return make_track('track02-original-v1').public()
     @app.get('/api/vehicle/me')

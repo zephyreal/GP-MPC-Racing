@@ -142,3 +142,22 @@ def test_ten_lap_configuration(setup):
     r=c.post('/api/vehicle/competitions',headers={'X-User':'1'},json={'title':'十圈比赛','laps':10,'max_time':1200})
     assert r.status_code==200,r.text
     assert c.post('/api/vehicle/competitions',headers={'X-User':'1'},json={'title':'超限比赛','laps':11}).status_code==422
+
+def test_beginner_tutorial_and_single_launcher(setup,tmp_path):
+    import subprocess,sys
+    c,db=setup
+    response=c.get('/courses/design/vehicle/tutorial.html')
+    assert response.status_code==200 and 'SPEED = 7.0' in response.text
+    response=c.get('/api/vehicle/starter',headers={'X-User':'2'})
+    target=tmp_path/'beginner';target.mkdir()
+    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+        assert {'START.bat','launch.py','START_HERE.html'}<=set(z.namelist())
+        z.extractall(target)
+    script="import launch,sys; from pathlib import Path; launch.prepare=lambda:Path(sys.executable); launch.open_file=lambda p:None; choices=iter(['1','0']); launch.input=lambda _:next(choices); launch.main()"
+    run=subprocess.run([sys.executable,'-c',script],cwd=target,capture_output=True,text=True,timeout=60)
+    assert run.returncode==0,run.stdout+run.stderr
+    result=json.loads((target/'output/local_result.json').read_text())
+    assert result['student']['completed_laps']==1
+    assert result['config']['laps']==1 and result['config']['track']=='oval'
+    history=[p for p in (target/'output').iterdir() if p.is_dir()]
+    assert len(history)==1 and (history[0]/'agent.py').read_bytes()==(target/'agent.py').read_bytes()

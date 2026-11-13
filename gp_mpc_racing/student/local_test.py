@@ -1,5 +1,6 @@
 """只运行你本人编写或教师提供的可信代码；本地成绩不用于打榜。"""
-import argparse, importlib.util, json, time, html
+import argparse, importlib.util, json, time, html, shutil
+from datetime import datetime
 from pathlib import Path
 from gp_mpc_racing.engine import Race, make_track
 
@@ -32,6 +33,7 @@ def main():
         if len(race.lap_times)!=last_lap:
             last_lap=len(race.lap_times);print('完成第',last_lap,'圈，用时',race.lap_times[-1],'秒',flush=True)
     result=race.result();output=root/'output';output.mkdir(exist_ok=True)
+    cfg={**cfg,'track':args.track or cfg['track'],'laps':laps}
     (output/'local_result.json').write_text(json.dumps({'config':cfg,'track':race.track.public(),'student':result},ensure_ascii=False),encoding='utf-8')
     pts=race.track.points;xs=[p[0] for p in pts];ys=[p[1] for p in pts]
     x0,y0=min(xs)-8,min(ys)-8;w,h=max(xs)-x0+8,max(ys)-y0+8
@@ -39,5 +41,9 @@ def main():
     summary=f"{result['status']}：{result['reason'] or '完成'}；完成 {result['completed_laps']} 圈；模拟时间 {result['simulated_seconds']} 秒"
     page=f"""<!doctype html><meta charset="utf-8"><title>本地试跑结果</title><style>body{{font:18px system-ui;max-width:960px;margin:30px auto;padding:20px}}svg{{width:100%;max-height:580px;background:#eef3ef}}pre{{white-space:pre-wrap}}</style><h1>本地试跑结果（不计正式成绩）</h1><p>{html.escape(summary)}</p><svg viewBox="{x0} {-y0-h} {w} {h}"><polyline points="{line(pts+[pts[0]])}" fill="none" stroke="#b7c9be" stroke-width="{race.track.width}"/><polyline points="{line([f['state'] for f in result['frames']])}" fill="none" stroke="#e67e22" stroke-width="0.6"/></svg><p>灰色：赛道；橙色：实际轨迹。越界可先降低目标速度，再调整前视距离。</p><p>满意后仅上传根目录 agent.py；不要上传本报告或整个案例包。</p><pre>逐圈用时：{result['lap_times']}<br>横向误差RMSE：{result['lateral_rmse']} m</pre>"""
     (output/'report.html').write_text(page,encoding='utf-8')
+    history=output/datetime.now().strftime('%Y%m%d-%H%M%S-%f');history.mkdir()
+    for name in ('report.html','local_result.json'):shutil.copy2(output/name,history/name)
+    shutil.copy2(root/'agent.py',history/'agent.py')
+    print('本次报告和代码已保留：',history)
     print(summary,'\n打开 output/report.html 查看轨迹。正式成绩以服务器为准。')
 if __name__=='__main__':main()
