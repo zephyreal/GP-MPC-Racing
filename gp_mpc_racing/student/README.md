@@ -1,3 +1,10 @@
+# V8示例与教师基线
+
+最初教师基线保留，V8作为学生案例。网页“核心代码教学”展示关键片段，完整MATLAB工程单独下载。
+START菜单选6自动备份当前agent.py并启用agent_v8_example.py，随后正常试跑，只上传agent.py。
+这是V8思路的Python简化示例（候选预测＋反馈，不含RLS），与MATLAB原V8不数值等价。原V8的.m/.mat不能直接参加网站Python赛。
+网站已经提供gp_mpc_racing中的物理、地图、教师控制器、评测与回放。不要把这些平台文件打包上传；自编辅助模块才与agent.py一起放ZIP根目录。
+
 # 推荐入口：只打开 START.bat
 
 全部解压后双击 START.bat，首次自动准备依赖，以后选择试跑即可。

@@ -1,0 +1,125 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>无人车竞赛 · 核心代码教学</title><style>body{font:17px/1.8 system-ui;color:#19392f;background:#f5f8f4;max-width:1050px;margin:auto;padding:24px}section{background:white;padding:22px;margin:18px 0;border:1px solid #d9e3db;border-radius:14px}h1,h2{line-height:1.4}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ddd;text-align:left;padding:10px;vertical-align:top}pre{background:#edf3ed;padding:16px;overflow:auto;font-size:14px}.source{color:#526b60;font-size:14px}a{color:#185f4c}@media(max-width:650px){body{padding:10px}section{padding:12px}table{display:block;overflow:auto}}</style><h1>无人车竞赛：读懂示例，再优化跑线</h1><p>最初版本保留为教师基线。V8是发给学生研究和改进的示例，不替换教师基线，也不因上传这个版本而改变评分规则。</p>
+<section><h2>先分清三种代码</h2><table><tr><th>代码</th><th>用途</th><th>你需要做什么</th></tr><tr><td>最初MATLAB工程（V3）</td><td>教师原始参考基线，原文件保留</td><td>阅读对照；当前网站自动赛实际使用已冻结的Python教师移植控制器，并非直接运行MATLAB</td></tr><tr><td>完整V8 MATLAB工程</td><td>学生本地学习案例：候选控制＋RLS残差学习</td><td>下载后在MATLAB运行、修改、比较；.m/.mat不能直接上传到当前自动赛</td></tr><tr><td>V8思路Python简化示例</td><td>适配网站的学生参赛起点：反馈＋候选预测，不含RLS</td><td>案例包内START菜单选择6，再修改agent.py、试跑和上传</td></tr></table><p>两套程序的车辆模型和约束不同：V8是7状态/3控制、最大转角30°；网站是6状态/2控制、最大转角20°。两者成绩不能直接混比；简化示例使用网站规则。</p><p><a href="/api/vehicle/teaching/v8/download">下载完整V8 MATLAB工程（原包）</a>　<a href="/api/vehicle/teaching/v8/python">下载Python简化示例</a></p><p>完整V8原包逐字节保留，包括地图、验证文件和原作者说明。网页只节选核心逻辑，不删改原工程。</p></section>
+<section><h2>网站已经有什么？我到底交什么？</h2><table><tr><th>部分</th><th>负责内容</th><th>是否上传</th></tr><tr><td>engine.py、地图数据</td><td>车辆动力学、赛道、越界判断、计圈、评分</td><td>网站已提供，不上传，不改正式规则</td></tr><tr><td>controllers.py</td><td>网站教师基准和基础示例控制器</td><td>网站已提供，学生修改它不会更新服务器版本</td></tr><tr><td>server.py / worker.py / 网页</td><td>账号、排队、隔离执行、结果存储和双车回放</td><td>网站已提供，不上传</td></tr><tr><td><b>agent.py</b></td><td><b>学生自己的Controller.act策略</b></td><td><b>默认只上传这个文件</b></td></tr><tr><td>自己编写的辅助模块</td><td>与agent.py一起被调用的Python代码或JSON参数</td><td>确有需要才打包ZIP，根目录放agent.py；不要包含gp_mpc_racing文件夹、.venv、结果或地图</td></tr><tr><td>V8 .m / .mat、HTML报告、轨迹JSON</td><td>本地学习与实验记录</td><td>不用于当前自动打榜；保留给课程报告</td></tr></table><p>返回 <code>{"steering": 0.1, "torque": 0.2}</code>，两项范围均为[-1,1]。平台根据控制量计算轨迹，学生不上传自己的圈速或成绩。复杂算法若需要修改controllers.py，应把修改后的策略放进自己的agent.py或辅助模块。</p></section>
+<section><h2>推荐跟做：只改一处，再看结果</h2><ol><li>下载当前比赛的完整Python案例包，启动START.bat，选择6启用V8思路简化示例（原agent.py会自动备份）。</li><li>先在同一地图按原设置试跑，保存报告。</li><li>只改变SPEED、LOOKAHEAD或HORIZON中的一项，再运行，比较完成圈数、轨迹误差、用时与计算耗时。</li><li>选择3完成比赛规定圈数，再上传根目录agent.py。网站会用同一教师基准比较。</li></ol><p>优化顺序：先稳定跑完 → 改善弯道跟踪 → 合理加速 → 在算力预算内改进候选预测。示例不保证在所有赛道跑完或胜过教师。</p></section>
+<section><h2>完整MATLAB V8怎么运行？</h2><p>解压，在MATLAB中切换到工程目录，先运行自检，再运行示例：</p><pre>selftest_v8
+START_LEARNING_V8
+% 对照实验：关闭学习
+baseline = run_stable_v8(struct('laps',6,'learn',false,'live',true));</pre><p>根据工程说明需要MATLAB R2018b或更新版本。本次未在MATLAB中执行自检；原包里的验证记录不是本站重新运行的验证结果。</p></section><section><h2>① 沿着赛道走：目标点与转向</h2><p>先找车辆在赛道上的位置，再找前方目标点。根据偏角计算转向，并限制转角及转向变化率；偏离道路或侧滑时降低参考速度。先理解前视距离和目标速度。</p><p class="source">来源：v8_feedback.m，第2—15行。节选仅用于阅读，不能单独运行。</p><pre><code>[s,e]=v8_project(m,X);
+look=(1.8+0.35*max(X(4,:),0)).*lookScale;
+[target,~]=v8_reference(m,s+look);[~,vref]=v8_reference(m,s);
+alpha=atan2(target(2,:)-X(2,:),target(1,:)-X(1,:))-X(3,:);
+distance=max(0.5,sqrt(sum((target-X(1:2,:)).^2,1)));
+delta=atan(2*2.4*sin(alpha)./distance)+offset;
+delta=max(-c.steerMax,min(c.steerMax,delta));
+delta=max(last(1,:)-c.steerRate*c.dt,min(last(1,:)+c.steerRate*c.dt,delta));
+vref=vref.*speedScale;
+% Reduce speed when deviation / sideslip increases; no progress reward.
+vref=vref./(1+0.5*abs(e)+2*abs(atan2(X(5,:),X(4,:))));
+a=max(-c.brakeAccel,min(c.accelMax,1.5*(vref-X(4,:))));
+% Nominal force mapping; true model mass differs as in previous versions.
+T=750*a./(4000*(a&gt;=0)+8000*(a&lt;0));</code></pre></section><section><h2>② 先预测，再选择控制</h2><p>原V8比较18个固定反馈策略。预测未来状态、剔除不满足约束的候选，综合横向误差、速度偏差和控制变化选择方案，只执行第一步。计时与备用策略仍需阅读完整文件。</p><p class="source">来源：v8_control.m，第11—44行。节选仅用于阅读，不能单独运行。</p><pre><code>% 18 fixed feedback policies; no fmincon and no gradient estimation.
+[o,v,l]=ndgrid([-0.05 0 0.05],[0.65 0.85 1],[1 1.35]);
+o=o(:)&#x27;;v=v(:)&#x27;;l=l(:)&#x27;;B=numel(o);
+X=repmat(x,1,B);lastU=repmat(last,1,B);
+paths=zeros(7,c.horizon+1,B);paths(:,1,:)=reshape(X,7,1,B);
+first=zeros(3,B);cost=zeros(1,B);ok=true(1,B);clearMin=inf(1,B);rejected=false(7,B);
+for k=1:c.horizon
+    if toc(searchClock)&gt;c.searchBudget
+        info.timedOut=true;info.seconds=toc(searchClock);return;
+    end
+    [U,vr]=v8_feedback(X,lastU,m,c,o,v,l);
+    if k==1,first=U;end
+    X=v8_predict(X,U,c,active);
+    [clearance,e]=v8_clearance(m,X,c);
+    beta=atan2(X(5,:),X(4,:));
+    bad=v8_stability(X,U,clearance,c);rejected=rejected | bad;
+    ok=~any(rejected,1);
+    info.rejectCounts=sum(rejected,2);
+    info.rejectMask=uint16(sum(double(rejected).*(2.^(0:6)&#x27;),1))&#x27;;
+    clearMin=min(clearMin,clearance);
+    cost=cost+8*e.^2+0.8*(X(4,:)-vr).^2+2*beta.^2+ ...
+        0.5*(U(1,:)-lastU(1,:)).^2+0.2*(c.speedMax-X(4,:)).^2;
+    paths(:,k+1,:)=reshape(X,7,1,B);lastU=U;
+end
+info.candidates=B;info.screenComplete=true;info.feasibleCount=sum(ok);
+if toc(searchClock)&gt;c.searchBudget
+    info.timedOut=true;
+else
+    cost(~ok)=inf;[best,j]=min(cost);
+    if isfinite(best)
+        u=first(:,j);pred=paths(:,:,j);info.fallback=false;info.feasible=true;
+        info.predictedClearance=clearMin(j);
+    end
+end</code></pre></section><section><h2>③ 学习模型误差：RLS更新</h2><p>把真实运动与名义模型预测的差别作为学习目标，用递推最小二乘更新残差模型。这里是RLS，不是GP，也不是强化学习；此片段不包含初始化。</p><p class="source">来源：v8_rls.m，第7—17行。节选仅用于阅读，不能单独运行。</p><pre><code>[p,z]=v8_features(X,U);
+if any(~isfinite([p;target])),return;end
+P=model.P;g=P*p/(c.rlsForgetting+p&#x27;*P*p);
+W=model.W+(target-model.W*p)*g&#x27;;
+P=(P-g*(p&#x27;*P))/c.rlsForgetting;P=(P+P&#x27;)/2;
+if any(~isfinite(W(:))) || any(~isfinite(P(:))),return;end
+model.W=W;model.P=P;model.count=model.count+1;
+model.lo=min(model.lo,z);model.hi=max(model.hi,z);
+end</code></pre></section><section><h2>④ 限制学习补偿，避免盲目使用</h2><p>数据不足时不补偿；限制支持范围与补偿幅值。完整V8还有冻结候选、留出验证、分步验证及圈边界切换，不能只保留学习更新就宣称安全。</p><p class="source">来源：v8_correction.m，第2—11行。节选仅用于阅读，不能单独运行。</p><pre><code>d=zeros(3,size(X,2));
+if isempty(model) || model.count&lt;100,return;end
+[p,z]=v8_features(X,U);
+supported=all(z&gt;=model.lo-0.10 &amp; z&lt;=model.hi+0.10,1);
+% P is an RLS information inverse, not a calibrated probabilistic guarantee.
+confidence=1./(1+max(0,sum(p.*(model.P*p),1)));
+bound=[0.20;0.08;0.08];raw=model.W*p;
+d=model.gain*max(-bound,min(bound,raw)).*confidence.*supported;
+d(:,~all(isfinite(d),1))=0;
+end</code></pre></section><section><h2>可上传的Python简化示例：完整代码</h2><p>这是网站接口适配的教学示例，不是原MATLAB V8的数值等价复现。只从官方案例包运行；网页摘录不代替完整工程。</p><pre><code>&quot;&quot;&quot;V8思路的Python教学简化版，适配网站6状态/2控制接口。
+不是MATLAB V8等价移植，不含RLS、学习验证与原版稳定性筛选。
+网站的物理引擎、赛道、计圈和教师基线不由本文件修改。
+先修改下面三个参数，在同一赛道比较完成率、用时及误差。
+&quot;&quot;&quot;
+import math
+from gp_mpc_racing.engine import Track, step, wrap, clamp, STEER
+
+SPEED = 6.0        # 目标速度 m/s
+LOOKAHEAD = 7.0    # 前视距离 m
+HORIZON = 6       # 预测步数；增大也会增加计算量
+
+class Controller:
+    def __init__(self):
+        self.track = None
+
+    def feedback(self, state, speed, lookahead):
+        x, y, yaw, vx, vy, yaw_rate = state
+        s = self.track.project(x, y)[1]
+        tx, ty, _ = self.track.point(s + lookahead)
+        alpha = wrap(math.atan2(ty-y, tx-x)-yaw)
+        steering = math.atan2(2*2.4*math.sin(alpha), lookahead)
+        return {&#x27;steering&#x27;: clamp(steering/STEER, -1, 1),
+                &#x27;torque&#x27;: clamp(.25*(speed-vx)+.1, -1, 1)}
+
+    def act(self, observation):
+        if self.track is None:
+            self.track = Track.from_public(observation[&#x27;track&#x27;])
+        state = observation[&#x27;state&#x27;]
+        # 先准备简单反馈作为备用；备用策略并不保证安全或完成。
+        best = self.feedback(state, SPEED*.75, LOOKAHEAD)
+        best_cost = float(&#x27;inf&#x27;)
+        # 对4个候选策略预测，只执行最优候选的第一步。
+        for speed_scale in (.75, 1.0):
+            for look_scale in (1.0, 1.3):
+                predicted = list(state)
+                cost = 0.0
+                first = None
+                for _ in range(HORIZON):
+                    action = self.feedback(predicted, SPEED*speed_scale, LOOKAHEAD*look_scale)
+                    if first is None:
+                        first = action
+                    physical = [action[&#x27;steering&#x27;]*STEER, action[&#x27;torque&#x27;]]
+                    predicted = step(predicted, physical, dt=observation[&#x27;dt&#x27;], nominal=True)
+                    distance, s, heading, lateral = self.track.project(*predicted[:2])
+                    # 简化道路筛选；正式越界由网站对车身角点独立判断。
+                    if distance &gt; self.track.width/2 - 1.2:
+                        cost = float(&#x27;inf&#x27;)
+                        break
+                    cost += 8*lateral*lateral + .8*(predicted[3]-SPEED)**2
+                    cost += 2*wrap(predicted[2]-heading)**2
+                if first is not None and cost &lt; best_cost:
+                    best_cost, best = cost, first
+        return best
+</code></pre></section></html>

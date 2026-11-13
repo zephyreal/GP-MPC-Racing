@@ -10,6 +10,10 @@ def build_starter(config):
             if p.is_file():z.writestr(p.name,p.read_bytes())
         for name in ('__init__.py','engine.py','controllers.py','data/track02-original-v1.json'):
             z.writestr('gp_mpc_racing/'+name,(root/name).read_bytes())
+        import re
+        lesson=(root/'static/teaching.html').read_text()
+        lesson=re.sub(r'<a href="/api/vehicle/teaching/v8/[^"]+">(.*?)</a>',r'\1（请回到课程网站下载）',lesson)
+        z.writestr('teaching.html',lesson)
         z.writestr('START_HERE.html',(root/'static/tutorial.html').read_bytes())
         z.writestr('competition.json',json.dumps(config,ensure_ascii=False,indent=2))
         z.writestr('track.json',json.dumps(track,ensure_ascii=False,indent=2))
