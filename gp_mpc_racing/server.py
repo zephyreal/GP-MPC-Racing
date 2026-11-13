@@ -175,16 +175,20 @@ def register(app,env,*,demo=False):
         if not 1<=len(alias.strip())<=30 or len(note)>2000:raise HTTPException(400,'昵称1—30字，改进说明不超过2000字')
         content=await file.read(1_000_001)
         try:
-            if (file.filename or '').lower().endswith('.py'):
-                if not content or len(content)>900_000:raise ValueError('Python文件须小于900KB')
-                import ast
-                try:ast.parse(content.decode('utf-8-sig'))
-                except (UnicodeError,SyntaxError) as e:raise ValueError('Python文件须为UTF-8编码且语法正确：'+str(e))
-                output=io.BytesIO()
-                with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
-                    info=zipfile.ZipInfo('agent.py');info.compress_type=zipfile.ZIP_DEFLATED
-                    z.writestr(info,content)
-                content=output.getvalue()
+            if (file.filename or '').lower() != 'agent.py':raise ValueError('只接受单个 agent.py 文件，不接受工程ZIP或JSON')
+            if not content or len(content)>900_000:raise ValueError('Python文件须小于900KB')
+            import ast
+            try:tree=ast.parse(content.decode('utf-8-sig'))
+            except (UnicodeError,SyntaxError) as e:raise ValueError('Python文件须为UTF-8编码且语法正确：'+str(e))
+            functions=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='control']
+            if len(functions)!=1:raise ValueError('请使用新版案例：定义 control(observation, reference, vehicle, memory) 函数')
+            fn=functions[0]
+            if len(fn.args.posonlyargs)+len(fn.args.args)!=4 or fn.args.kwonlyargs or fn.args.vararg or fn.args.kwarg:raise ValueError('control函数需要4个位置参数：observation, reference, vehicle, memory')
+            output=io.BytesIO()
+            with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
+                info=zipfile.ZipInfo('agent.py');info.compress_type=zipfile.ZIP_DEFLATED
+                z.writestr(info,content)
+            content=output.getvalue()
             validate_archive(content)
         except (ValueError,zipfile.BadZipFile) as e:raise HTTPException(400,str(e))
         path=folder/(secrets.token_hex(20)+'.zip')

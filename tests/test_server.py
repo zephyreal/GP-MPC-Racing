@@ -37,7 +37,7 @@ def create(c,mode='practice'):
     r=c.post('/api/vehicle/competitions',headers={'X-User':'1'},json={'title':'无人车比赛','track':'oval','mode':mode,'laps':1,'max_time':90,'learn':False});assert r.status_code==200,r.text
     return r.json()['id']
 def submit(c,cid,uid=2):
-    r=c.post(f'/api/vehicle/competitions/{cid}/entries',headers={'X-User':str(uid)},data={'alias':'<script>同学','note':'test'},files={'file':('agent.zip',code())});assert r.status_code==200,r.text
+    r=c.post(f'/api/vehicle/competitions/{cid}/entries',headers={'X-User':str(uid)},data={'alias':'<script>同学','note':'test'},files={'file':('agent.py',b'def control(o,r,v,m): return 0,0,m')});assert r.status_code==200,r.text
     return r.json()['id']
 def worker(c):return {'Authorization':'Bearer '+c.post('/api/vehicle/worker-key',headers={'X-User':'1'}).json()['token']}
 def claim(c,w):return c.post('/api/vehicle/worker/claim',headers=w,json={'fingerprint':'a'*64}).json()['job']
@@ -91,14 +91,14 @@ def test_archive_and_transport_limits(setup):
 
 def test_single_file_upload_deduplicates_without_execution(setup):
     c,db=setup;cid=create(c)
-    files={'file':('agent.py',b'raise RuntimeError("website must never run this")')}
+    files={'file':('agent.py',b'raise RuntimeError("website must never run this")\ndef control(o,r,v,m): return 0,0,m')}
     url=f'/api/vehicle/competitions/{cid}/entries'
     first=c.post(url,headers={'X-User':'2'},files=files);assert first.status_code==200,first.text
     second=c.post(url,headers={'X-User':'2'},files=files)
     assert second.json()['id']==first.json()['id'] and second.json()['reused']
     bad=c.post(url,headers={'X-User':'2'},files={'file':('agent.py',b'def broken(:')})
     assert bad.status_code==400
-    changed=c.post(url,headers={'X-User':'2'},files={'file':('agent.py',b'pass')})
+    changed=c.post(url,headers={'X-User':'2'},files={'file':('agent.py',b'def control(o,r,v,m): return 0.1,0,m')})
     assert changed.status_code==200
     with db() as d:assert d.execute('SELECT state FROM vehicle_entries WHERE id=?',(first.json()['id'],)).fetchone()[0]=='superseded'
 

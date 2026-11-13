@@ -6,7 +6,7 @@ try:
         from gp_mpc_racing.controllers import MPCController
         controller=MPCController(learn=os.getenv('RACE_LEARN','1')=='1',maxiter=12)
     else:
-        spec=importlib.util.spec_from_file_location('student_agent','/submission/agent.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);controller=module.Controller()
+        spec=importlib.util.spec_from_file_location('student_agent','/submission/agent.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);from gp_mpc_racing.function_adapter import load_controller;controller=load_controller(module)
     import hashlib
     from pathlib import Path
     root=Path(__file__).parent

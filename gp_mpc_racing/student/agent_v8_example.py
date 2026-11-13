@@ -52,3 +52,11 @@ class Controller:
                 if first is not None and cost < best_cost:
                     best_cost, best = cost, first
         return best
+
+
+def control(observation, reference, vehicle, memory):
+    """V8简化预测策略；memory保存本场控制器，跨圈保留。"""
+    if memory is None:
+        memory = Controller()
+    action = memory.act({**observation, 'track': reference})
+    return action['steering'], action['torque'], memory

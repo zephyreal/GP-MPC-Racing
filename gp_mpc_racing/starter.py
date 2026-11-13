@@ -8,7 +8,7 @@ def build_starter(config):
     with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as z:
         for p in sorted((root/'student').iterdir()):
             if p.is_file():z.writestr(p.name,p.read_bytes())
-        for name in ('__init__.py','engine.py','controllers.py','data/track02-original-v1.json'):
+        for name in ('__init__.py','engine.py','controllers.py','function_adapter.py','data/track02-original-v1.json'):
             z.writestr('gp_mpc_racing/'+name,(root/name).read_bytes())
         import re
         lesson=(root/'static/teaching.html').read_text()

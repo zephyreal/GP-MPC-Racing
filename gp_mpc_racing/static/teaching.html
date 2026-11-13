@@ -1,6 +1,51 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>无人车竞赛 · 核心代码教学</title><style>body{font:17px/1.8 system-ui;color:#19392f;background:#f5f8f4;max-width:1050px;margin:auto;padding:24px}section{background:white;padding:22px;margin:18px 0;border:1px solid #d9e3db;border-radius:14px}h1,h2{line-height:1.4}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ddd;text-align:left;padding:10px;vertical-align:top}pre{background:#edf3ed;padding:16px;overflow:auto;font-size:14px}.source{color:#526b60;font-size:14px}a{color:#185f4c}@media(max-width:650px){body{padding:10px}section{padding:12px}table{display:block;overflow:auto}}</style><h1>无人车竞赛：读懂示例，再优化跑线</h1><p>最初版本保留为教师基线。V8是发给学生研究和改进的示例，不替换教师基线，也不因上传这个版本而改变评分规则。</p>
 <section><h2>先分清三种代码</h2><table><tr><th>代码</th><th>用途</th><th>你需要做什么</th></tr><tr><td>最初MATLAB工程（V3）</td><td>教师原始参考基线，原文件保留</td><td>阅读对照；当前网站自动赛实际使用已冻结的Python教师移植控制器，并非直接运行MATLAB</td></tr><tr><td>完整V8 MATLAB工程</td><td>学生本地学习案例：候选控制＋RLS残差学习</td><td>下载后在MATLAB运行、修改、比较；.m/.mat不能直接上传到当前自动赛</td></tr><tr><td>V8思路Python简化示例</td><td>适配网站的学生参赛起点：反馈＋候选预测，不含RLS</td><td>案例包内START菜单选择6，再修改agent.py、试跑和上传</td></tr></table><p>两套程序的车辆模型和约束不同：V8是7状态/3控制、最大转角30°；网站是6状态/2控制、最大转角20°。两者成绩不能直接混比；简化示例使用网站规则。</p><p><a href="/api/vehicle/teaching/v8/download">下载完整V8 MATLAB工程（原包）</a>　<a href="/api/vehicle/teaching/v8/python">下载Python简化示例</a></p><p>完整V8原包逐字节保留，包括地图、验证文件和原作者说明。网页只节选核心逻辑，不删改原工程。</p></section>
-<section><h2>网站已经有什么？我到底交什么？</h2><table><tr><th>部分</th><th>负责内容</th><th>是否上传</th></tr><tr><td>engine.py、地图数据</td><td>车辆动力学、赛道、越界判断、计圈、评分</td><td>网站已提供，不上传，不改正式规则</td></tr><tr><td>controllers.py</td><td>网站教师基准和基础示例控制器</td><td>网站已提供，学生修改它不会更新服务器版本</td></tr><tr><td>server.py / worker.py / 网页</td><td>账号、排队、隔离执行、结果存储和双车回放</td><td>网站已提供，不上传</td></tr><tr><td><b>agent.py</b></td><td><b>学生自己的Controller.act策略</b></td><td><b>默认只上传这个文件</b></td></tr><tr><td>自己编写的辅助模块</td><td>与agent.py一起被调用的Python代码或JSON参数</td><td>确有需要才打包ZIP，根目录放agent.py；不要包含gp_mpc_racing文件夹、.venv、结果或地图</td></tr><tr><td>V8 .m / .mat、HTML报告、轨迹JSON</td><td>本地学习与实验记录</td><td>不用于当前自动打榜；保留给课程报告</td></tr></table><p>返回 <code>{"steering": 0.1, "torque": 0.2}</code>，两项范围均为[-1,1]。平台根据控制量计算轨迹，学生不上传自己的圈速或成绩。复杂算法若需要修改controllers.py，应把修改后的策略放进自己的agent.py或辅助模块。</p></section>
+<section><h2>先读这一个函数：入门核心代码</h2><p>平台调用 control(observation, reference, vehicle, memory)，返回 steering, drive, memory。输入单位与范围见代码注释。先用此示例跑通，再学习后面的V8预测策略。</p><pre><code>&quot;&quot;&quot;无人车入门：只修改本文件，测试后只上传 agent.py。
+平台每0.15秒调用一次 control；不需要编写主程序、读文件或绘图。
+学习顺序：先跑完 → 修改速度 → 修改前视距离 → 弯道减速/优化跑线。
+&quot;&quot;&quot;
+import math
+from gp_mpc_racing.engine import Track
+
+SPEED = 8.0       # 目标速度 m/s；首次实验改为7.0，其余不变
+LOOKAHEAD = 7.0   # 前视距离 m；不是越大越好
+
+
+def control(observation, reference, vehicle, memory):
+    &quot;&quot;&quot;输入（均由平台提供）：
+    observation[&#x27;state&#x27;]: [x,y,yaw,vx,vy,yaw_rate]；m、rad、m/s、rad/s
+    observation[&#x27;time&#x27;/&#x27;dt&#x27;]: 当前模拟时间/步长，秒
+    observation[&#x27;lap&#x27;/&#x27;target_laps&#x27;]: 已完成圈数/目标圈数
+    reference: 完整赛道字典，可用 Track.from_public 转为查询对象
+    vehicle: length/width/wheelbase（m）、max_steering（rad）、dt（s）
+    memory: 首次为None；返回后传给下一步，跨圈保留，每场重置
+
+    输出：steering, drive, memory
+    steering∈[-1,1]：正值左转，实际角度=steering*max_steering
+    drive∈[-1,1]：正值驱动，负值制动（归一化控制量）
+    可在本文件增加辅助函数；不上传地图、配置JSON、轨迹或成绩。
+    &quot;&quot;&quot;
+    if memory is None:
+        memory = {&#x27;track&#x27;: Track.from_public(reference)}
+    track = memory[&#x27;track&#x27;]
+    x, y, yaw, vx, vy, yaw_rate = observation[&#x27;state&#x27;]
+
+    # 1. 跑线：投影到中心线，寻找前方目标点。
+    # project返回：距离、沿线里程、切线方向、带符号横向误差。
+    distance, s, heading, lateral = track.project(x, y)
+    tx, ty, _ = track.point(s + LOOKAHEAD)
+
+    # 2. 转向：纯追踪，让车头朝向目标点。
+    alpha = math.atan2(ty-y, tx-x) - yaw
+    alpha = math.atan2(math.sin(alpha), math.cos(alpha))
+    angle = math.atan2(2 * vehicle[&#x27;wheelbase&#x27;] * math.sin(alpha), LOOKAHEAD)
+    steering = max(-1.0, min(1.0, angle / vehicle[&#x27;max_steering&#x27;]))
+
+    # 3. 速度：先使用固定目标速度，后续可改为弯道减速。
+    target_speed = SPEED
+    drive = max(-1.0, min(1.0, 0.25 * (target_speed-vx) + 0.1))
+    return steering, drive, memory
+</code></pre></section><section><h2>网站已经有什么？我到底交什么？</h2><table><tr><th>部分</th><th>负责内容</th><th>是否上传</th></tr><tr><td>engine.py、地图数据</td><td>车辆动力学、赛道、越界判断、计圈、评分</td><td>网站已提供，不上传，不改正式规则</td></tr><tr><td>controllers.py</td><td>网站教师基准和基础示例控制器</td><td>网站已提供，学生修改它不会更新服务器版本</td></tr><tr><td>server.py / worker.py / 网页</td><td>账号、排队、隔离执行、结果存储和双车回放</td><td>网站已提供，不上传</td></tr><tr><td><b>agent.py</b></td><td><b>学生自己的control函数</b></td><td><b>只上传这个文件</b></td></tr><tr><td>自己编写的辅助模块</td><td>与agent.py一起被调用的Python代码或JSON参数</td><td>辅助函数和参数均写入agent.py；不接受工程ZIP或JSON</td></tr><tr><td>V8 .m / .mat、HTML报告、轨迹JSON</td><td>本地学习与实验记录</td><td>不用于当前自动打榜；保留给课程报告</td></tr></table><p>函数返回 <code>steering, drive, memory</code>，例如 <code>0.1, 0.2, memory</code>，两项范围均为[-1,1]。平台根据控制量计算轨迹，学生不上传自己的圈速或成绩。复杂算法若需要修改controllers.py，应把修改后的策略放进自己的agent.py。</p></section>
 <section><h2>推荐跟做：只改一处，再看结果</h2><ol><li>下载当前比赛的完整Python案例包，启动START.bat，选择6启用V8思路简化示例（原agent.py会自动备份）。</li><li>先在同一地图按原设置试跑，保存报告。</li><li>只改变SPEED、LOOKAHEAD或HORIZON中的一项，再运行，比较完成圈数、轨迹误差、用时与计算耗时。</li><li>选择3完成比赛规定圈数，再上传根目录agent.py。网站会用同一教师基准比较。</li></ol><p>优化顺序：先稳定跑完 → 改善弯道跟踪 → 合理加速 → 在算力预算内改进候选预测。示例不保证在所有赛道跑完或胜过教师。</p></section>
 <section><h2>完整MATLAB V8怎么运行？</h2><p>解压，在MATLAB中切换到工程目录，先运行自检，再运行示例：</p><pre>selftest_v8
 START_LEARNING_V8
@@ -122,4 +167,12 @@ class Controller:
                 if first is not None and cost &lt; best_cost:
                     best_cost, best = cost, first
         return best
+
+
+def control(observation, reference, vehicle, memory):
+    &quot;&quot;&quot;V8简化预测策略；memory保存本场控制器，跨圈保留。&quot;&quot;&quot;
+    if memory is None:
+        memory = Controller()
+    action = memory.act({**observation, &#x27;track&#x27;: reference})
+    return action[&#x27;steering&#x27;], action[&#x27;torque&#x27;], memory
 </code></pre></section></html>

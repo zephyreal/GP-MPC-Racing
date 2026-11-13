@@ -16,7 +16,7 @@ def main():
     if not 1<=laps<=10:raise SystemExit('圈数须在1至10之间')
     spec=importlib.util.spec_from_file_location('student_agent',root/'agent.py')
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-    controller=module.Controller()
+    from gp_mpc_racing.function_adapter import load_controller;controller=load_controller(module)
     race=Race(make_track(args.track or cfg['track']),laps,cfg['max_time'],cfg['seed'])
     print('本地试跑：',race.track.name,'目标',laps,'圈',flush=True)
     last_lap=0
